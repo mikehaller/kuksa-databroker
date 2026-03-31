@@ -2098,6 +2098,40 @@ impl AuthorizedAccess<'_, '_> {
         }
     }
 
+    async fn can_write_datapoint(
+        &self,
+        signal_id: &SignalId,
+    ) -> Result<(), (RegisterSignalError, String)> {
+        match self.get_entry_by_id(signal_id.id()).await {
+            Ok(entry) => {
+                let vss_path = entry.metadata.path;
+                match self.permissions.can_write_datapoint(&vss_path) {
+                    Ok(_) => Ok(()),
+                    Err(PermissionError::Denied) => {
+                        let message = format!("Permission denied for vss_path {vss_path}");
+                        Err((RegisterSignalError::PermissionDenied, message))
+                    }
+                    Err(PermissionError::Expired) => Err((
+                        RegisterSignalError::PermissionExpired,
+                        "Permission expired".to_string(),
+                    )),
+                }
+            }
+            Err(ReadError::NotFound) => {
+                let message = format!("Could not resolve vss_path of signal id {}", signal_id.id());
+                Err((RegisterSignalError::NotFound, message))
+            }
+            Err(ReadError::PermissionDenied) => {
+                let message = format!("Permission denied for signal id {}", signal_id.id());
+                Err((RegisterSignalError::PermissionDenied, message))
+            }
+            Err(ReadError::PermissionExpired) => Err((
+                RegisterSignalError::PermissionExpired,
+                "Permission expired".to_string(),
+            )),
+        }
+    }
+
     async fn validate_actuator_update(
         &self,
         vss_id: &i32,
@@ -2254,6 +2288,10 @@ impl AuthorizedAccess<'_, '_> {
         vss_ids_intervals: HashMap<SignalId, TimeInterval>,
         signal_provider: Box<dyn SignalProvider + Send + Sync + 'static>,
     ) -> Result<Uuid, (RegisterSignalError, String)> {
+        for signal_id in vss_ids_intervals.keys() {
+            self.can_write_datapoint(signal_id).await?;
+        }
+
         let registered_vss_ids: HashSet<SignalId> = self
             .broker
             .subscriptions
@@ -2296,6 +2334,10 @@ impl AuthorizedAccess<'_, '_> {
         vss_ids_intervals: HashMap<SignalId, TimeInterval>,
         provider_uuid: Uuid,
     ) -> Result<(), (RegisterSignalError, String)> {
+        for signal_id in vss_ids_intervals.keys() {
+            self.can_write_datapoint(signal_id).await?;
+        }
+
         let registered_vss_ids: HashSet<SignalId> = self
             .broker
             .subscriptions
