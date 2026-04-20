@@ -119,7 +119,7 @@ async def test_events(setup_helper: Databroker) -> None:
         helper.set_float_datapoint(datapoint_speed, 40.0)
     )
     set_load = asyncio.create_task(
-        helper.set_float_datapoint(datapoint_engine_load, 10.0)
+        helper.set_int16_datapoint(datapoint_engine_load, 10)
     )
 
     await set_speed_1
