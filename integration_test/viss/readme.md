@@ -11,7 +11,7 @@
 
 - Python 3
 - Databroker
-- VSS Release 4.0
+- VSS Release 6.0
 - Optional: MQTT broker for testing MQTT transport protocol
 - kuksa-common for `jwt.key.pub` to test Authorization / Access Control
 
