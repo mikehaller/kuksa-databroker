@@ -44,8 +44,8 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -78,8 +78,8 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -107,8 +107,8 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -129,8 +129,8 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -148,7 +148,7 @@ jobs:
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
         # Uploaded result available at https://app.codecov.io/gh/eclipse-kuksa/kuksa-databroker
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -171,9 +171,9 @@ jobs:
           - name: arm64
           - name: riscv64
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/bin/
@@ -184,7 +184,7 @@ jobs:
           ~/.cargo/.crates2.json
           target-*/
         key: databroker-release-${{ matrix.platform.name }}-${{ hashFiles('**/Cargo.lock') }}
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v6
       # Needed for pip
       with:
         python-version: '3.12'
@@ -208,7 +208,7 @@ jobs:
         tar -czf ../databroker-${{ matrix.platform.name }}.tar.gz *
 
     - name: "Uploading  artifacts"
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
           name: databroker-${{ matrix.platform.name }}
           path: ${{github.workspace}}/dist/databroker-${{ matrix.platform.name}}.tar.gz
@@ -216,7 +216,7 @@ jobs:
 
   check_ghcr_push:
     name: Check access rights
-    uses: eclipse-kuksa/kuksa-actions/.github/workflows/check_ghcr_push.yml@4
+    uses: eclipse-kuksa/kuksa-actions/.github/workflows/check_ghcr_push.yml@5
     secrets: inherit
 
   create-container:
@@ -226,9 +226,9 @@ jobs:
     needs: [build, check_ghcr_push]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Retrieve artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         path: artifacts
         pattern: databroker-*
@@ -243,7 +243,7 @@ jobs:
 
     - name: Set container metadata
       id: meta
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@v6
       with:
         # list of Docker images to use as base name for tags
         images: |
@@ -259,7 +259,7 @@ jobs:
 
     - name: Setup Docker Buildx
       id: buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
 
     - name: Log in to ghcr.io container registry
       if: needs.check_ghcr_push.outputs.push == 'true'
@@ -280,7 +280,7 @@ jobs:
     - name: Build kuksa-databroker container and push to ghcr.io, quay.io and ttl.sh
       id: ghcr-build
       if: needs.check_ghcr_push.outputs.push == 'true'
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7
       with:
         platforms: |
           linux/amd64
@@ -300,7 +300,7 @@ jobs:
     - name: Build ephemeral kuksa-databroker container and push to ttl.sh
       if: needs.check_ghcr_push.outputs.push == 'false'
       id: tmp-build
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7
       with:
         platforms: |
           linux/amd64
@@ -316,7 +316,7 @@ jobs:
         provenance: false
 
     - name: Posting message
-      uses: eclipse-kuksa/kuksa-actions/post-container-location@4
+      uses: eclipse-kuksa/kuksa-actions/post-container-location@5
       with:
         image: ttl.sh/eclipse-kuksa/kuksa-databroker-${{github.sha}}
 
@@ -330,9 +330,9 @@ jobs:
 
     steps:
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run integration test on ${{ matrix.platform }} container
         env:
@@ -346,8 +346,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -373,7 +373,7 @@ jobs:
           > ${{github.workspace}}/dash-databroker-deps
 
       - name: Dash license check
-        uses: eclipse-kuksa/kuksa-actions/check-dash@4
+        uses: eclipse-kuksa/kuksa-actions/check-dash@5
         with:
           dashinput: ${{github.workspace}}/dash-databroker-deps
           dashtoken: ${{ secrets.ECLIPSE_GITLAB_API_TOKEN }}
@@ -383,5 +383,5 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: eclipse-kuksa/kuksa-actions/check-markdown@4
+      - uses: actions/checkout@v6
+      - uses: eclipse-kuksa/kuksa-actions/check-markdown@5
