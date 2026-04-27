@@ -209,6 +209,14 @@ class Databroker:
         self._ids[name] = metadata_id
         return metadata_id
 
+    async def set_int16_datapoint(self, name: str, value: int):
+        datapoint = Datapoint()
+        datapoint.int32_value = value # proto only has 32 bit integer types.
+        datapoint_id = await self.__get_or_create_datapoint_id_by_name(
+            name, DataType.INT16  # type: ignore
+        )
+        return await self.__update_datapoints({datapoint_id: datapoint})
+
     async def set_int32_datapoint(self, name: str, value: int):
         datapoint = Datapoint()
         datapoint.int32_value = value

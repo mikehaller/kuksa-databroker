@@ -20,7 +20,7 @@ source .venv/bin/activate
 pip install -r "${SCRIPT_DIR}"/requirements.txt
 
 
-DATABROKER_IMAGE=${DATABROKER_IMAGE:-"ghcr.io/eclipse-kuksa/kuksa-databroker:0.4.0"}
+DATABROKER_IMAGE=${DATABROKER_IMAGE:-"ghcr.io/eclipse-kuksa/kuksa-databroker:0.6.1"}
 DATABROKER_ADDRESS=${DATABROKER_ADDRESS:-"127.0.0.1:55555"}
 CONTAINER_PLATFORM=${CONTAINER_PLATFORM:-"linux/amd64"}
 
@@ -28,7 +28,7 @@ VSS_DATA_DIR="$SCRIPT_DIR/../data"
 
 echo "Starting databroker container (\"${DATABROKER_IMAGE}\") in insecure mode, requesting platform (\"${CONTAINER_PLATFORM}\")"
 RUNNING_IMAGE=$(
-    docker run -d -v ${VSS_DATA_DIR}:/data -p 55555:55555 --rm  --platform ${CONTAINER_PLATFORM} ${DATABROKER_IMAGE} --metadata data/vss-core/vss_release_5.1.json --insecure --enable-databroker-v1
+    docker run -d -v ${VSS_DATA_DIR}:/data -p 55555:55555 --rm  --platform ${CONTAINER_PLATFORM} ${DATABROKER_IMAGE} --metadata data/vss-core/vss_release_6.0.json --insecure --enable-databroker-v1
 )
 
 python3 -m pytest -v "${SCRIPT_DIR}/test_databroker.py"

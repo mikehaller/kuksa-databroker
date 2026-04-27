@@ -11,7 +11,7 @@
 
 - Python 3
 - Databroker
-- VSS Release 4.0
+- VSS Release 6.0
 - Optional: MQTT broker for testing MQTT transport protocol
 - kuksa-common for `jwt.key.pub` to test Authorization / Access Control
 
@@ -39,7 +39,7 @@ pip install pytest pytest-bdd allure-pytest-bdd requests websocket-client paho-m
 
 Start databroker from project root:
 ```
-RUST_LOG=debug cargo run --bin databroker --release --features viss -- --vss data/vss-core/vss_release_5.1.json --insecure --enable-viss --viss-address 0.0.0.0 --viss-port 8090
+RUST_LOG=debug cargo run --bin databroker --release --features viss -- --vss data/vss-core/vss_release_6.0.json --insecure --enable-viss --viss-address 0.0.0.0 --viss-port 8090
 ```
 
 > RUST_LOG=debug enables debug log messages of databroker, which shows incoming and outgoing VISS requests and makes it easier to troubleshoot failing tests.
@@ -80,7 +80,7 @@ _Setup:_ Clone kuksa-common for pre-built JWT tokens for testing purposes.
 Start databroker with public key using `--jwt-public-key` to enable validation of access tokens:
 
 ```
-RUST_LOG=debug cargo run --bin databroker --release --features viss -- --vss data/vss-core/vss_release_5.1.json --insecure --enable-databroker-v1 --enable-viss --viss-address 0.0.0.0 --viss-port 8090 --jwt-public-key kuksa-common/jwt/jwt.key.pub
+RUST_LOG=debug cargo run --bin databroker --release --features viss -- --vss data/vss-core/vss_release_6.0.json --insecure --enable-databroker-v1 --enable-viss --viss-address 0.0.0.0 --viss-port 8090 --jwt-public-key kuksa-common/jwt/jwt.key.pub
 ```
 
 Re-run tests:

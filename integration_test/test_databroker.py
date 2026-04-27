@@ -18,6 +18,7 @@ import os
 
 import asyncio
 import pytest
+import pytest_asyncio
 
 from gen_proto.sdv.databroker.v1.types_pb2 import Datapoint
 from helper import Databroker
@@ -28,7 +29,7 @@ logger.setLevel(os.getenv("LOG_LEVEL", "WARN"))
 DATABROKER_ADDRESS = os.environ.get("DATABROKER_ADDRESS", "127.0.0.1:55555")
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def setup_helper() -> Databroker:
     logger.info("Using DATABROKER_ADDRESS={}".format(DATABROKER_ADDRESS))
     helper = await Databroker.ConnectedDatabroker(DATABROKER_ADDRESS)
@@ -46,12 +47,12 @@ async def test_databroker_connection() -> None:
 
 @pytest.mark.asyncio
 async def test_feeder_metadata_registered(setup_helper: Databroker) -> None:
-    helper = await setup_helper
+    helper = setup_helper
     feeder_names = [
-        "Vehicle.OBD.Speed",
+        "Vehicle.Speed",
         "Vehicle.Powertrain.Transmission.CurrentGear",
         "Vehicle.Chassis.ParkingBrake.IsEngaged",
-        "Vehicle.OBD.EngineLoad",
+        "Vehicle.Powertrain.ElectricMotor.Torque",
     ]
 
     meta = await helper.get_metadata(feeder_names)
@@ -87,11 +88,11 @@ async def test_feeder_metadata_registered(setup_helper: Databroker) -> None:
 
 @pytest.mark.asyncio
 async def test_events(setup_helper: Databroker) -> None:
-    helper: Databroker = await setup_helper
+    helper: Databroker = setup_helper
 
     timeout = 3
-    datapoint_speed = "Vehicle.OBD.Speed" # float
-    datapoint_engine_load = "Vehicle.OBD.EngineLoad" # float
+    datapoint_speed = "Vehicle.Speed" # float
+    datapoint_engine_load = "Vehicle.Powertrain.ElectricMotor.Torque" # int16
     alias_speed = "speed"
     alias_load = "load"
 
@@ -110,15 +111,21 @@ async def test_events(setup_helper: Databroker) -> None:
         helper.subscribe_datapoints(query, timeout=timeout, sub_callback=inner_callback)
     )
 
-    set_name1 = asyncio.create_task(
+    # Give the subscription task a brief moment to register before publishing updates.
+    await asyncio.sleep(0.2)
+
+    # Ensure at least one datapoint changes value during the subscription window.
+    set_speed_1 = asyncio.create_task(
         helper.set_float_datapoint(datapoint_speed, 40.0)
     )
-    set_name2 = asyncio.create_task(
-        helper.set_float_datapoint(datapoint_engine_load, 10.0)
+    set_load = asyncio.create_task(
+        helper.set_int16_datapoint(datapoint_engine_load, 10)
     )
 
-    await set_name1
-    await set_name2
+    await set_speed_1
+    await set_load
+    await asyncio.sleep(0.2)
+    await helper.set_float_datapoint(datapoint_speed, 41.0)
     await subscription
 
     logger.debug("Received events:{}".format(events))
