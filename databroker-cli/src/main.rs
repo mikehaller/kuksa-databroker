@@ -16,6 +16,7 @@ use cli::Protocol;
 
 pub mod cli;
 mod kuksa_cli;
+mod kuksa_val_v2_cli;
 mod sdv_cli;
 
 #[tokio::main]
@@ -33,7 +34,13 @@ async fn main() {
             Ok(_) => (),
             Err(e) => eprintln!("Error: {e}"),
         }
+    } else if cli.get_protocol() == Protocol::KuksaValV2 {
+        let err = kuksa_val_v2_cli::kuksa_val_v2_main(cli.clone()).await;
+        match err {
+            Ok(_) => (),
+            Err(e) => eprintln!("Error: {e}"),
+        }
     } else {
-        println!("Choose one protocol of either kuksa.val.v1 or sdv.databroker.v1")
+        println!("Choose one protocol of either kuksa.val.v1, sdv.databroker.v1 or kuksa.val.v2")
     }
 }

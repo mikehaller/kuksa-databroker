@@ -794,6 +794,7 @@ dependencies = [
  "kuksa",
  "kuksa-common",
  "kuksa-sdv",
+ "kuksa_val_v2",
  "linefeed",
  "prost 0.14.3",
  "prost-types",
@@ -2748,6 +2749,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuksa_val_v2"
+version = "0.7.0-dev.0"
+dependencies = [
+ "databroker-proto",
+ "http 1.4.0",
+ "kuksa-common",
+ "prost 0.14.3",
+ "prost-types",
+ "test-tag",
+ "tokio",
+ "tokio-stream",
+ "tonic 0.14.5",
+]
+
+[[package]]
 name = "lazy-regex"
 version = "3.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4224,6 +4240,17 @@ dependencies = [
  "nom",
  "phf",
  "phf_codegen",
+]
+
+[[package]]
+name = "test-tag"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5a2455608f6a56fc2ce66c89dd005501c169688f29165468e65f0b47e060333"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

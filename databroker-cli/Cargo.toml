@@ -22,6 +22,7 @@ license = "Apache-2.0"
 kuksa-common = { path = "../lib/common"}
 kuksa = { path = "../lib/kuksa"}
 kuksa-sdv = { path = "../lib/sdv"}
+kuksa_val_v2 = { path = "../lib/kuksa_val_v2"}
 databroker-proto = { workspace = true }
 tonic = { workspace = true, features = ["transport", "channel"] }
 tonic-prost = { version = "0.14" }
@@ -49,7 +50,7 @@ http = "1.4"
 
 [features]
 default = ["tls"]
-tls = ["tonic/tls-ring", "kuksa-common/tls", "kuksa/tls"]
+tls = ["tonic/tls-ring", "kuksa-common/tls", "kuksa/tls", "kuksa_val_v2/tls"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(test)'] }
