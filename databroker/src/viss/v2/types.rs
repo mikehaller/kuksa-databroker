@@ -200,6 +200,8 @@ pub enum Filter {
     Paths(PathsFilter),
     #[serde(rename = "timebased")]
     Timebased(TimebasedFilter),
+    #[serde(rename = "history")]
+    History(HistoryFilter),
 }
 
 #[derive(Deserialize)]
@@ -224,6 +226,13 @@ pub struct TimebasedFilter {
 #[serde(rename_all = "camelCase")]
 pub struct Period {
     pub period: u32,
+}
+
+/// A history filter request with an ISO 8601 duration parameter (e.g. "PT1H", "P1D").
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryFilter {
+    pub parameter: String,
 }
 
 // Unique id value specified by the client. Returned by the server in the
