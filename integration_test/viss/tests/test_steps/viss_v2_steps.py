@@ -572,7 +572,7 @@ def receive_ws_list_of_server_capabilities(connected_clients,request_id):
             ]
         }
 
-        assert expected_response == response, f"Expected server capabilites, but got: {response}"
+        assert expected_response == response, f"Expected server capabilities, but got: {response}"
     else:
         raise Exception("WebSocket client not found")
 

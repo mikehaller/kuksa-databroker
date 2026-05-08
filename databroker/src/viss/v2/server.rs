@@ -122,7 +122,6 @@ impl Viss for Server {
 
                 broker
                     .for_each_entry(|entry| {
-                        let path = entry.metadata().path.clone();
                         let entry_path = &entry.metadata().path;
                         
                         // Check if entry path starts with the requested path
@@ -130,7 +129,7 @@ impl Viss for Server {
                             if let Ok(datapoint) = entry.datapoint() {
                                 let dp = DataPoint::from(datapoint.clone());
                                 entries_data.push(DataObject {
-                                    path: Path::from(path),
+                                    path: Path::from(entry_path.clone()),
                                     dp,
                                 });
                             }
