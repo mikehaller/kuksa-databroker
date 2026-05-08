@@ -35,6 +35,8 @@ pub trait Response: Serialize {}
 impl Response for GetSuccessResponse {}
 impl Response for GetErrorResponse {}
 
+impl Response for ServerCapabilitiesResponse {}
+
 impl Response for SetSuccessResponse {}
 impl Response for SetErrorResponse {}
 
@@ -63,6 +65,7 @@ pub struct GetRequest {
 pub enum GetSuccessResponse {
     Data(DataResponse),
     Metadata(MetadataResponse),
+    ServerCapabilities(ServerCapabilitiesResponse),
 }
 
 #[derive(Serialize)]
@@ -77,6 +80,13 @@ pub struct DataResponse {
 pub struct MetadataResponse {
     pub request_id: RequestId,
     pub metadata: HashMap<String, MetadataEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ServerCapabilitiesResponse {
+    pub filter: Vec<String>,
+    pub transport_protocol: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -196,6 +206,8 @@ pub struct GenericErrorResponse {
 pub enum Filter {
     #[serde(rename = "static-metadata")]
     StaticMetadata(StaticMetadataFilter),
+    #[serde(rename = "dynamic-metadata")]
+    DynamicMetadata(DynamicMetadataFilter),
     #[serde(rename = "paths")]
     Paths(PathsFilter),
     #[serde(rename = "timebased")]
@@ -212,6 +224,12 @@ pub struct PathsFilter {
 #[serde(rename_all = "camelCase")]
 pub struct StaticMetadataFilter {
     // pub parameters: Option<StaticMetadataParameters>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DynamicMetadataFilter {
+    pub parameter: Vec<String>,
 }
 
 #[derive(Deserialize)]
