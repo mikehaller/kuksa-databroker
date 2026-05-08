@@ -552,21 +552,29 @@ def receive_ws_set_readonly_error(connected_clients,request_id):
 
 @then("I should receive a list of server capabilities")
 def receive_ws_list_of_server_capabilities(connected_clients,request_id):
-    envelope = connected_clients.find_message(request_id=request_id)
-    response = envelope["body"]
-    expected_response = {
-        "filter": [
-            "timebased",
-            "change",
-            "dynamic_metadata"
-        ],
-        "transport_protocol": [
-            "https",
-            "wss"
-        ]
-    }
+    # Server capabilities response doesn't include requestId in a standard way, 
+    # so we retrieve all messages and get the latest one
+    # Get the active client (WebSocket in this case)
+    client = connected_clients.clients.get("WebSockets")
+    if client:
+        messages = client.received_messages.all()
+        envelope = max(messages, key=lambda x: x["timestamp"], default=None)
+        response = envelope["body"]
+        expected_response = {
+            "filter": [
+                "timebased",
+                "change",
+                "dynamic_metadata"
+            ],
+            "transport_protocol": [
+                "https",
+                "wss"
+            ]
+        }
 
-    assert expected_response == response, f"Expected server capabilites, but got: {response}"
+        assert expected_response == response, f"Expected server capabilites, but got: {response}"
+    else:
+        raise Exception("WebSocket client not found")
 
 @when(parsers.parse('I request historical data for "{path}" with a timeframe of "{timeframe}"'))
 def request_historical_data(connected_clients, request_id, path, timeframe):
