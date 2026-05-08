@@ -13,6 +13,14 @@
 - tests structured in a modular way to allow easy extension for VISS v3.
 - reports generated with allure-pytest to assess compliance.
 
+## Implementation Status
+
+- Implemented in production databroker: VISS v2 subset over WebSocket (`--enable-viss`).
+- In progress / not fully equivalent to production server functionality yet: VISS HTTP and MQTT compliance scenarios in this test suite.
+- In progress / not fully equivalent to production server functionality yet: VISS v3 compliance scenarios in this test suite.
+- Test harness note: MQTT tests currently use a mock VISS server component in test code for parts
+  of the flow and should not be interpreted as proof of production MQTT transport support.
+
 ## Pre-Requisites
 
 - Python 3
