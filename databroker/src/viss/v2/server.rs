@@ -101,6 +101,55 @@ impl Viss for Server {
                 request_id,
                 metadata,
             }));
+        } else if let Some(Filter::DynamicMetadata(filter)) = &request.filter {
+            // Handle dynamic metadata requests
+            if filter.parameter.contains(&"server_capabilities".to_string()) {
+                // Return server capabilities
+                return Ok(GetSuccessResponse::ServerCapabilities(
+                    ServerCapabilitiesResponse {
+                        filter: vec![
+                            "timebased".to_string(),
+                            "change".to_string(),
+                            "dynamic_metadata".to_string(),
+                        ],
+                        transport_protocol: vec!["https".to_string(), "wss".to_string()],
+                    },
+                ));
+            } else if filter.parameter.contains(&"availability".to_string()) {
+                // Handle availability filter - return all available data points
+                let broker = self.broker.authorized_access(&permissions::ALLOW_NONE);
+                let mut entries_data = Vec::new();
+
+                broker
+                    .for_each_entry(|entry| {
+                        let path = entry.metadata().path.clone();
+                        let entry_path = &entry.metadata().path;
+                        
+                        // Check if entry path starts with the requested path
+                        if entry_path.starts_with(request.path.as_ref()) {
+                            if let Ok(datapoint) = entry.datapoint() {
+                                let dp = DataPoint::from(datapoint.clone());
+                                entries_data.push(DataObject {
+                                    path: Path::from(path),
+                                    dp,
+                                });
+                            }
+                        }
+                    })
+                    .await;
+
+                return Ok(GetSuccessResponse::Data(DataResponse {
+                    request_id,
+                    data: Data::Array(entries_data),
+                }));
+            } else {
+                // Unsupported dynamic metadata parameter
+                return Err(GetErrorResponse {
+                    request_id,
+                    ts: SystemTime::now().into(),
+                    error: Error::NotImplemented,
+                });
+            }
         } else if let Some(Filter::Paths(paths_filter)) = &request.filter {
             let request_path = request.path.as_ref();
             if request_path.contains('*') {
