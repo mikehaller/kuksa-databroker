@@ -49,7 +49,9 @@ To enable the legacy `sdv.databroker.v1` API you must start Databroker with the 
 
 ### VISS v2
 
-KUKSA databroker aims to provide a standards compliant implementation of [VISS](https://github.com/COVESA/vehicle-information-service-specification) v2 (using the websocket transport).
+KUKSA databroker currently implements a subset of [VISS](https://github.com/COVESA/vehicle-information-service-specification) v2 using the WebSocket transport.
+
+Current production scope is VISS v2 over WebSocket only.
 
 It supports authorization using the access token format specified in [authorization.md](authorization.md).
 

@@ -110,8 +110,14 @@ Kuksa Databroker implements the following gRPC service interfaces:
 - Disabled on Databroker by default [sdv.databroker.v1.Broker](proto/sdv/databroker/v1/broker.proto) (Deprecated!)
 - Disabled on Databroker by default [sdv.databroker.v1.Collector](proto/sdv/databroker/v1/collector.proto) (Deprecated!)
 
-In addition to the gRPC interfaces the Kuksa Databroker also supports a subset of the [COVESA VISS v2 Protocol[(https://github.com/COVESA/vehicle-information-service-specification)
-using WebSocket.
+In addition to the gRPC interfaces, Kuksa Databroker also supports a subset of the
+[COVESA VISS v2 protocol](https://github.com/COVESA/vehicle-information-service-specification)
+over WebSocket.
+
+Current production scope is VISS v2 over WebSocket only. HTTP, MQTT, and VISS v3-related
+compliance scenarios in integration tests are in-progress and not all are backed by
+equivalent production server functionality yet.
+
 Please visit the [user guide](doc/user_guide.md) for more information on how the interfaces can be enabled and configured in the Databroker.
 Please visit the [protocol documentation](doc/protocol.md) for more information on the APIs.
 
