@@ -1,5 +1,11 @@
 # Kuksa VISS Server Specification Compliance Testing
 
+## Implementation status in Databroker
+
+- Current implementation status: prototype support for a subset of VISS v2 over WebSocket.
+- VISS support is optional and must be enabled explicitly (`--features viss` + `--enable-viss`).
+- Feature files in this directory also cover broader and forward-looking specification scenarios; their presence does not imply implemented support for all transports or all VISS versions.
+
 ## Test Framework Architecture
 
 - pytest-bdd for Gherkin-based testing.
