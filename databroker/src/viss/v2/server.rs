@@ -103,7 +103,10 @@ impl Viss for Server {
             }));
         } else if let Some(Filter::DynamicMetadata(filter)) = &request.filter {
             // Handle dynamic metadata requests
-            if filter.parameter.contains(&"server_capabilities".to_string()) {
+            if filter
+                .parameter
+                .contains(&"server_capabilities".to_string())
+            {
                 // Return server capabilities
                 return Ok(GetSuccessResponse::ServerCapabilities(
                     ServerCapabilitiesResponse {
@@ -123,7 +126,7 @@ impl Viss for Server {
                 broker
                     .for_each_entry(|entry| {
                         let entry_path = &entry.metadata().path;
-                        
+
                         // Check if entry path starts with the requested path
                         if entry_path.starts_with(request.path.as_ref()) {
                             if let Ok(datapoint) = entry.datapoint() {

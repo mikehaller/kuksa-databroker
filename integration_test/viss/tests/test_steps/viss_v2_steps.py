@@ -552,7 +552,7 @@ def receive_ws_set_readonly_error(connected_clients,request_id):
 
 @then("I should receive a list of server capabilities")
 def receive_ws_list_of_server_capabilities(connected_clients,request_id):
-    # Server capabilities response doesn't include requestId in a standard way, 
+    # Server capabilities response doesn't include requestId in a standard way,
     # so we retrieve all messages and get the latest one
     # Get the active client (WebSocket in this case)
     client = connected_clients.clients.get("WebSockets")
