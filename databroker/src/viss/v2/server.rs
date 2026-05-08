@@ -564,7 +564,7 @@ fn is_valid_iso8601_duration(s: &str) -> bool {
                 .find(|c: char| !c.is_ascii_digit())
                 .unwrap_or(remaining.len());
             if digit_end == 0 {
-                return false; // designator without preceding digits
+                return false; // designator found without preceding number
             }
             remaining = &remaining[digit_end..];
             // Consume designator
