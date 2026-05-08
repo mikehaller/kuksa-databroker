@@ -203,6 +203,12 @@ def viss_client_connected_via_mqtt(mqtt_client):
     logger.debug("Connecting via MQTT")
     mqtt_client.connect()
 
+@given("the VISS client is connected via gRPC")
+def viss_client_connected_via_grpc():
+    pytest.skip(
+        "VISS gRPC transport scenarios are planned but not yet backed by an equivalent production VISS implementation."
+    )
+
 @given(parsers.parse("I have a subscription to \"{path}\""), target_fixture="subscription_id")
 @when(parsers.parse('I send a subscription request for "{path}"'), target_fixture="subscription_id")
 def send_subscribe(connected_clients, request_id, path):
