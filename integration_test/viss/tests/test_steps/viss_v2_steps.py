@@ -343,6 +343,19 @@ def send_set(connected_clients, request_id, path, value):
     request = {"action": "set", "path": path, "requestId": request_id.new(), "value": value}
     connected_clients.send(request_id, request)
 
+@when(parsers.parse('I send a set request for path "{path}" using latest subscription value plus {delta:g}'))
+def send_set_relative_to_latest_subscription_event(connected_clients, request_id, subscription_id, path, delta):
+    envelope = connected_clients.find_message(subscription_id=subscription_id,
+                                              request_id=None,
+                                              action="subscription")
+    response = envelope["body"]
+    base_value = float(response["data"]["dp"]["value"])
+    new_value = base_value + float(delta)
+    if new_value.is_integer():
+        new_value = int(new_value)
+    request = {"action": "set", "path": path, "requestId": request_id.new(), "value": new_value}
+    connected_clients.send(request_id, request)
+
 @then("I should receive a valid read response")
 def receive_valid_get_response(connected_clients, request_id):
     envelope = connected_clients.find_message(request_id=request_id,
@@ -517,6 +530,27 @@ def receive_ws_subscription(connected_clients,subscription_id,request_id):
     # the value itself may be "None", but the key must exist
     assert 'value' in response["data"]['dp']
     assert response["data"]['dp']['ts'] != None
+
+@then("I store the current subscription event count", target_fixture="subscription_event_count")
+def store_current_subscription_event_count(connected_clients, subscription_id):
+    messages = connected_clients.find_messages(subscription_id=subscription_id,
+                                               request_id=None,
+                                               action="subscription")
+    return len(messages or [])
+
+@then("no new subscription event should have been received")
+def no_new_subscription_event_received(connected_clients, subscription_id, subscription_event_count):
+    messages = connected_clients.find_messages(subscription_id=subscription_id,
+                                               request_id=None,
+                                               action="subscription")
+    assert len(messages or []) == subscription_event_count
+
+@then("I should receive additional subscription events")
+def additional_subscription_events_received(connected_clients, subscription_id, subscription_event_count):
+    messages = connected_clients.find_messages(subscription_id=subscription_id,
+                                               request_id=None,
+                                               action="subscription")
+    assert len(messages or []) > subscription_event_count
 
 @then("I should receive a valid set response")
 def receive_ws_set(connected_clients,request_id):

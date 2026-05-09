@@ -20,6 +20,7 @@ use std::{
 };
 
 use futures::{
+    future,
     stream::{AbortHandle, Abortable},
     Stream, StreamExt,
 };
@@ -382,6 +383,10 @@ impl Viss for Server {
         } else {
             None
         };
+        let filter_state = request
+            .filter
+            .as_ref()
+            .and_then(SubscriptionFilterState::from);
 
         match broker.subscribe(entries, None, interval_ms).await {
             Ok(stream) => {
@@ -398,7 +403,7 @@ impl Viss for Server {
                     SubscriptionHandle::from(abort_handle),
                 );
 
-                let stream = convert_to_viss_stream(subscription_id.clone(), stream);
+                let stream = convert_to_viss_stream(subscription_id.clone(), stream, filter_state);
 
                 Ok((
                     SubscribeSuccessResponse {
@@ -450,41 +455,219 @@ impl Viss for Server {
 fn convert_to_viss_stream(
     subscription_id: SubscriptionId,
     stream: impl Stream<Item = Option<broker::EntryUpdates>>,
+    mut filter_state: Option<SubscriptionFilterState>,
 ) -> impl Stream<Item = Result<SubscriptionEvent, SubscriptionErrorEvent>> {
-    stream.map(move |item| {
-        let ts = SystemTime::now().into();
-        let subscription_id = subscription_id.clone();
-        match item {
-            Some(mut value) => match value.updates.pop() {
-                Some(item) => match (item.update.path, item.update.datapoint) {
-                    (Some(path), Some(datapoint)) => Ok(SubscriptionEvent {
-                        subscription_id,
-                        data: Data::Object(DataObject {
-                            path: path.into(),
-                            dp: datapoint.into(),
-                        }),
-                        ts,
-                    }),
-                    (_, _) => Err(SubscriptionErrorEvent {
+    stream
+        .map(move |item| {
+            let ts = SystemTime::now().into();
+            let subscription_id = subscription_id.clone();
+            match item {
+                Some(mut value) => match value.updates.pop() {
+                    Some(item) => match (item.update.path, item.update.datapoint) {
+                        (Some(path), Some(datapoint)) => {
+                            if let Some(state) = &mut filter_state {
+                                if !state.matches(&datapoint) {
+                                    return None;
+                                }
+                            }
+                            Some(Ok(SubscriptionEvent {
+                                subscription_id,
+                                data: Data::Object(DataObject {
+                                    path: path.into(),
+                                    dp: datapoint.into(),
+                                }),
+                                ts,
+                            }))
+                        }
+                        (_, _) => Some(Err(SubscriptionErrorEvent {
+                            subscription_id,
+                            error: Error::InternalServerError,
+                            ts,
+                        })),
+                    },
+                    None => Some(Err(SubscriptionErrorEvent {
                         subscription_id,
                         error: Error::InternalServerError,
                         ts,
-                    }),
+                    })),
                 },
-                None => Err(SubscriptionErrorEvent {
+                // if None, it means the provider(is not available), meaning we should return the VISS error service_unavailable
+                None => Some(Err(SubscriptionErrorEvent {
                     subscription_id,
-                    error: Error::InternalServerError,
+                    error: Error::ServiceUnavailable,
                     ts,
-                }),
-            },
-            // if None, it means the provider(is not available), meaning we should return the VISS error service_unavailable
-            None => Err(SubscriptionErrorEvent {
-                subscription_id,
-                error: Error::ServiceUnavailable,
-                ts,
-            }),
+                })),
+            }
+        })
+        .filter_map(future::ready)
+}
+
+enum SubscriptionFilterState {
+    Range(RangeFilter),
+    Change(ChangeFilterState),
+}
+
+impl SubscriptionFilterState {
+    fn from(filter: &Filter) -> Option<Self> {
+        match filter {
+            Filter::Range(range_filter) => Some(Self::Range(range_filter.clone())),
+            Filter::Change(change_filter) => {
+                Some(Self::Change(ChangeFilterState::new(change_filter.clone())))
+            }
+            _ => None,
         }
-    })
+    }
+
+    fn matches(&mut self, datapoint: &broker::Datapoint) -> bool {
+        match self {
+            SubscriptionFilterState::Range(range_filter) => {
+                evaluate_range_filter(range_filter, datapoint)
+            }
+            SubscriptionFilterState::Change(change_filter) => change_filter.matches(datapoint),
+        }
+    }
+}
+
+struct ChangeFilterState {
+    filter: ChangeFilter,
+    last_emitted_value: Option<f64>,
+}
+
+impl ChangeFilterState {
+    fn new(filter: ChangeFilter) -> Self {
+        Self {
+            filter,
+            last_emitted_value: None,
+        }
+    }
+
+    fn matches(&mut self, datapoint: &broker::Datapoint) -> bool {
+        let Some(value) = datapoint_to_f64(datapoint) else {
+            return false;
+        };
+        let Ok(diff_threshold) = self.filter.parameter.diff.parse::<f64>() else {
+            return false;
+        };
+
+        let should_emit = if let Some(last_emitted) = self.last_emitted_value {
+            evaluate_comparison_op(
+                self.filter.parameter.logic_op.clone(),
+                value - last_emitted,
+                diff_threshold,
+            )
+        } else {
+            true
+        };
+
+        if should_emit {
+            self.last_emitted_value = Some(value);
+        }
+
+        should_emit
+    }
+}
+
+fn evaluate_range_filter(filter: &RangeFilter, datapoint: &broker::Datapoint) -> bool {
+    let Some(value) = datapoint_to_f64(datapoint) else {
+        return false;
+    };
+    let Some(first_boundary) = filter.parameter.first() else {
+        return false;
+    };
+    let Ok(first_threshold) = first_boundary.boundary.parse::<f64>() else {
+        return false;
+    };
+
+    let mut result =
+        evaluate_comparison_op(first_boundary.boundary_op.clone(), value, first_threshold);
+    let mut previous_combination = first_boundary.combination_op.clone();
+
+    for boundary in filter.parameter.iter().skip(1) {
+        let Ok(threshold) = boundary.boundary.parse::<f64>() else {
+            return false;
+        };
+        let current = evaluate_comparison_op(boundary.boundary_op.clone(), value, threshold);
+
+        result = match previous_combination.unwrap_or(CombinationOp::And) {
+            CombinationOp::And => result && current,
+            CombinationOp::Or => result || current,
+        };
+
+        previous_combination = boundary.combination_op.clone();
+    }
+
+    result
+}
+
+fn evaluate_comparison_op(op: ComparisonOp, lhs: f64, rhs: f64) -> bool {
+    match op {
+        ComparisonOp::Gte => lhs >= rhs,
+        ComparisonOp::Lte => lhs <= rhs,
+        ComparisonOp::Gt => lhs > rhs,
+        ComparisonOp::Lt => lhs < rhs,
+        ComparisonOp::Eq => lhs == rhs,
+        ComparisonOp::Ne => lhs != rhs,
+    }
+}
+
+fn datapoint_to_f64(datapoint: &broker::Datapoint) -> Option<f64> {
+    match datapoint.value {
+        broker::DataValue::Int32(value) => Some(value as f64),
+        broker::DataValue::Int64(value) => Some(value as f64),
+        broker::DataValue::Uint32(value) => Some(value as f64),
+        broker::DataValue::Uint64(value) => Some(value as f64),
+        broker::DataValue::Float(value) => Some(value as f64),
+        broker::DataValue::Double(value) => Some(value),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn datapoint(value: i32) -> broker::Datapoint {
+        broker::Datapoint {
+            ts: SystemTime::now(),
+            source_ts: None,
+            value: broker::DataValue::Int32(value),
+        }
+    }
+
+    #[test]
+    fn range_filter_matches_or_boundaries() {
+        let filter = RangeFilter {
+            parameter: vec![
+                RangeBoundary {
+                    boundary_op: ComparisonOp::Lt,
+                    boundary: "50".to_string(),
+                    combination_op: Some(CombinationOp::Or),
+                },
+                RangeBoundary {
+                    boundary_op: ComparisonOp::Gt,
+                    boundary: "55".to_string(),
+                    combination_op: None,
+                },
+            ],
+        };
+
+        assert!(!evaluate_range_filter(&filter, &datapoint(53)));
+        assert!(evaluate_range_filter(&filter, &datapoint(60)));
+    }
+
+    #[test]
+    fn change_filter_requires_threshold_after_initial_event() {
+        let mut state = ChangeFilterState::new(ChangeFilter {
+            parameter: ChangeParameter {
+                logic_op: ComparisonOp::Gt,
+                diff: "10".to_string(),
+            },
+        });
+
+        assert!(state.matches(&datapoint(40)));
+        assert!(!state.matches(&datapoint(45)));
+        assert!(state.matches(&datapoint(55)));
+    }
 }
 
 fn resolve_permissions(
