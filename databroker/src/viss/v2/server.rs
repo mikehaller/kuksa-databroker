@@ -20,8 +20,7 @@ use std::{
 };
 
 use futures::{
-    future,
-    stream::{AbortHandle, Abortable},
+    stream::{self, AbortHandle, Abortable},
     Stream, StreamExt,
 };
 use tokio::sync::RwLock;
@@ -526,49 +525,49 @@ fn convert_to_viss_stream(
     stream: impl Stream<Item = Option<broker::EntryUpdates>>,
     mut filter_state: Option<SubscriptionFilterState>,
 ) -> impl Stream<Item = Result<SubscriptionEvent, SubscriptionErrorEvent>> {
-    stream
-        .map(move |item| {
-            let ts = SystemTime::now().into();
-            let subscription_id = subscription_id.clone();
-            match item {
-                Some(mut value) => match value.updates.pop() {
-                    Some(item) => match (item.update.path, item.update.datapoint) {
-                        (Some(path), Some(datapoint)) => {
-                            if let Some(state) = &mut filter_state {
-                                if !state.matches(&datapoint) {
-                                    return None;
+    stream.flat_map(move |item| {
+        let subscription_id = subscription_id.clone();
+        let batch_ts = SystemTime::now();
+        match item {
+            Some(value) => {
+                let events: Vec<Result<SubscriptionEvent, SubscriptionErrorEvent>> = value
+                    .updates
+                    .into_iter()
+                    .filter_map(
+                        |update| match (update.update.path, update.update.datapoint) {
+                            (Some(path), Some(datapoint)) => {
+                                if let Some(state) = &mut filter_state {
+                                    if !state.matches(&datapoint) {
+                                        return None;
+                                    }
                                 }
+                                Some(Ok(SubscriptionEvent {
+                                    subscription_id: subscription_id.clone(),
+                                    data: Data::Object(DataObject {
+                                        path: path.into(),
+                                        dp: datapoint.into(),
+                                    }),
+                                    ts: batch_ts.into(),
+                                }))
                             }
-                            Some(Ok(SubscriptionEvent {
-                                subscription_id,
-                                data: Data::Object(DataObject {
-                                    path: path.into(),
-                                    dp: datapoint.into(),
-                                }),
-                                ts,
-                            }))
-                        }
-                        (_, _) => Some(Err(SubscriptionErrorEvent {
-                            subscription_id,
-                            error: Error::InternalServerError,
-                            ts,
-                        })),
-                    },
-                    None => Some(Err(SubscriptionErrorEvent {
-                        subscription_id,
-                        error: Error::InternalServerError,
-                        ts,
-                    })),
-                },
-                // if None, it means the provider(is not available), meaning we should return the VISS error service_unavailable
-                None => Some(Err(SubscriptionErrorEvent {
-                    subscription_id,
-                    error: Error::ServiceUnavailable,
-                    ts,
-                })),
+                            (_, _) => Some(Err(SubscriptionErrorEvent {
+                                subscription_id: subscription_id.clone(),
+                                error: Error::InternalServerError,
+                                ts: batch_ts.into(),
+                            })),
+                        },
+                    )
+                    .collect();
+                stream::iter(events)
             }
-        })
-        .filter_map(future::ready)
+            // if None, it means the provider is not available, meaning we should return the VISS error service_unavailable
+            None => stream::iter(vec![Err(SubscriptionErrorEvent {
+                subscription_id,
+                error: Error::ServiceUnavailable,
+                ts: batch_ts.into(),
+            })]),
+        }
+    })
 }
 
 enum SubscriptionFilterState {
@@ -848,12 +847,125 @@ fn insert_entry(entries: &mut HashMap<String, MetadataEntry>, path: &str, entry:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::broker::{
+        ChangeNotification, DataValue, Datapoint, EntryUpdate, EntryUpdates, Field,
+    };
+    use futures::StreamExt;
+    use std::collections::HashSet;
+    use std::time::SystemTime;
+
+    fn make_notification(path: &str, value: i32) -> ChangeNotification {
+        ChangeNotification {
+            id: 1,
+            update: EntryUpdate {
+                path: Some(path.to_string()),
+                datapoint: Some(Datapoint {
+                    ts: SystemTime::now(),
+                    source_ts: None,
+                    value: DataValue::Int32(value),
+                }),
+                actuator_target: None,
+                entry_type: None,
+                data_type: None,
+                description: None,
+                allowed: None,
+                min: None,
+                max: None,
+                unit: None,
+            },
+            fields: HashSet::from([Field::Datapoint]),
+        }
+    }
 
     fn datapoint(value: i32) -> broker::Datapoint {
         broker::Datapoint {
             ts: SystemTime::now(),
             source_ts: None,
             value: broker::DataValue::Int32(value),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_convert_to_viss_stream_single_update() {
+        let subscription_id = SubscriptionId::new();
+        let entry_updates = EntryUpdates {
+            updates: vec![make_notification("Vehicle.Speed", 100)],
+        };
+        let input = futures::stream::iter(vec![Some(entry_updates)]);
+        let output: Vec<_> = convert_to_viss_stream(subscription_id, input, None)
+            .collect()
+            .await;
+        assert_eq!(output.len(), 1);
+        assert!(output[0].is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_convert_to_viss_stream_batch_emits_all_updates() {
+        // Regression test: a batch with multiple updates must emit one event per update,
+        // not just one (the original bug used `.pop()` and dropped the rest).
+        let subscription_id = SubscriptionId::new();
+        let entry_updates = EntryUpdates {
+            updates: vec![
+                make_notification("Vehicle.Speed", 100),
+                make_notification("Vehicle.Cabin.Temperature", 22),
+                make_notification("Vehicle.Body.Lights.IsHighBeamOn", 1),
+            ],
+        };
+        let input = futures::stream::iter(vec![Some(entry_updates)]);
+        let output: Vec<_> = convert_to_viss_stream(subscription_id, input, None)
+            .collect()
+            .await;
+        // All 3 updates must be emitted, not just one.
+        assert_eq!(output.len(), 3);
+        for event in &output {
+            assert!(event.is_ok(), "expected Ok event, got Err variant");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_convert_to_viss_stream_empty_updates() {
+        // An empty updates batch produces no events (flat_map over empty iterator).
+        let subscription_id = SubscriptionId::new();
+        let entry_updates = EntryUpdates { updates: vec![] };
+        let input = futures::stream::iter(vec![Some(entry_updates)]);
+        let output: Vec<_> = convert_to_viss_stream(subscription_id, input, None)
+            .collect()
+            .await;
+        assert_eq!(output.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_convert_to_viss_stream_none_yields_service_unavailable() {
+        let subscription_id = SubscriptionId::new();
+        let input = futures::stream::iter(vec![None]);
+        let output: Vec<_> = convert_to_viss_stream(subscription_id, input, None)
+            .collect()
+            .await;
+        assert_eq!(output.len(), 1);
+        assert!(output[0].is_err());
+    }
+
+    #[tokio::test]
+    async fn test_convert_to_viss_stream_multiple_batches() {
+        // Test two consecutive batches, each with different numbers of updates.
+        let subscription_id = SubscriptionId::new();
+        let batch1 = EntryUpdates {
+            updates: vec![
+                make_notification("Vehicle.Speed", 42),
+                make_notification("Vehicle.Cabin.Temperature", 20),
+            ],
+        };
+        let batch2 = EntryUpdates {
+            updates: vec![make_notification("Vehicle.Speed", 43)],
+        };
+        let input = futures::stream::iter(vec![Some(batch1), Some(batch2)]);
+        let output: Vec<_> = convert_to_viss_stream(subscription_id, input, None)
+            .collect()
+            .await;
+        // batch1 has 2 updates, batch2 has 1 → total 3 events.
+        assert_eq!(output.len(), 3);
+        for event in &output {
+            assert!(event.is_ok(), "expected Ok event, got Err variant");
         }
     }
 
