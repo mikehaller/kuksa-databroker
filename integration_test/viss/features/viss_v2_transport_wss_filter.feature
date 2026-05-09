@@ -43,6 +43,13 @@ Feature: VISS v2 Compliance Testing - Filter
     When I subscribe to "Vehicle.Speed" using a change filter
     Then I should receive a valid subscribe response
     And I should receive a valid subscription event
+    And I store the current subscription event count
+    When I send a set request for path "Vehicle.Speed" using latest subscription value plus 5
+    Then I should receive a valid set response
+    And no new subscription event should have been received
+    When I send a set request for path "Vehicle.Speed" using latest subscription value plus 15
+    Then I should receive a valid set response
+    And I should receive additional subscription events
 
   # 5.6.1 Subscribe with curve logging filter
   # The VISS server must support subscribing with a curve logging filter and return a valid subscribe response with the correct number of data points.
@@ -59,3 +66,10 @@ Feature: VISS v2 Compliance Testing - Filter
     When I subscribe to "Vehicle.Speed" using a range filter
     Then I should receive a valid subscribe response
     And I should receive a valid subscription event
+    And I store the current subscription event count
+    When I send a set request for path "Vehicle.Speed" with the value 53
+    Then I should receive a valid set response
+    And no new subscription event should have been received
+    When I send a set request for path "Vehicle.Speed" with the value 60
+    Then I should receive a valid set response
+    And I should receive additional subscription events

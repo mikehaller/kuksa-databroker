@@ -101,6 +101,75 @@ impl Viss for Server {
                 request_id,
                 metadata,
             }));
+        } else if let Some(Filter::History(history_filter)) = &request.filter {
+            // History filter: validate the ISO 8601 duration parameter and return
+            // a deterministic error. Full history persistence is not yet available,
+            // so valid requests receive a 501 Not Implemented response.
+            if !is_valid_iso8601_duration(&history_filter.parameter) {
+                return Err(GetErrorResponse {
+                    request_id,
+                    ts: SystemTime::now().into(),
+                    error: Error::BadRequest {
+                        msg: Some("Time duration is invalid.".into()),
+                    },
+                });
+            }
+            return Err(GetErrorResponse {
+                request_id,
+                ts: SystemTime::now().into(),
+                error: Error::NotImplemented,
+            });
+        } else if let Some(Filter::DynamicMetadata(filter)) = &request.filter {
+            // Handle dynamic metadata requests
+            if filter
+                .parameter
+                .contains(&"server_capabilities".to_string())
+            {
+                // Return server capabilities
+                return Ok(GetSuccessResponse::ServerCapabilities(
+                    ServerCapabilitiesResponse {
+                        filter: vec![
+                            "timebased".to_string(),
+                            "change".to_string(),
+                            "dynamic_metadata".to_string(),
+                        ],
+                        transport_protocol: vec!["https".to_string(), "wss".to_string()],
+                    },
+                ));
+            } else if filter.parameter.contains(&"availability".to_string()) {
+                // Handle availability filter - return all available data points
+                let broker = self.broker.authorized_access(&permissions::ALLOW_NONE);
+                let mut entries_data = Vec::new();
+
+                broker
+                    .for_each_entry(|entry| {
+                        let entry_path = &entry.metadata().path;
+
+                        // Check if entry path starts with the requested path
+                        if entry_path.starts_with(request.path.as_ref()) {
+                            if let Ok(datapoint) = entry.datapoint() {
+                                let dp = DataPoint::from(datapoint.clone());
+                                entries_data.push(DataObject {
+                                    path: Path::from(entry_path.clone()),
+                                    dp,
+                                });
+                            }
+                        }
+                    })
+                    .await;
+
+                return Ok(GetSuccessResponse::Data(DataResponse {
+                    request_id,
+                    data: Data::Array(entries_data),
+                }));
+            } else {
+                // Unsupported dynamic metadata parameter
+                return Err(GetErrorResponse {
+                    request_id,
+                    ts: SystemTime::now().into(),
+                    error: Error::NotImplemented,
+                });
+            }
         } else if let Some(Filter::Paths(paths_filter)) = &request.filter {
             let request_path = request.path.as_ref();
             if request_path.contains('*') {
@@ -382,6 +451,10 @@ impl Viss for Server {
         } else {
             None
         };
+        let filter_state = request
+            .filter
+            .as_ref()
+            .and_then(SubscriptionFilterState::from);
 
         match broker.subscribe(entries, None, interval_ms).await {
             Ok(stream) => {
@@ -398,7 +471,7 @@ impl Viss for Server {
                     SubscriptionHandle::from(abort_handle),
                 );
 
-                let stream = convert_to_viss_stream(subscription_id.clone(), stream);
+                let stream = convert_to_viss_stream(subscription_id.clone(), stream, filter_state);
 
                 Ok((
                     SubscribeSuccessResponse {
@@ -450,37 +523,40 @@ impl Viss for Server {
 fn convert_to_viss_stream(
     subscription_id: SubscriptionId,
     stream: impl Stream<Item = Option<broker::EntryUpdates>>,
+    mut filter_state: Option<SubscriptionFilterState>,
 ) -> impl Stream<Item = Result<SubscriptionEvent, SubscriptionErrorEvent>> {
     stream.flat_map(move |item| {
         let subscription_id = subscription_id.clone();
         let batch_ts = SystemTime::now();
         match item {
             Some(value) => {
-                if value.updates.is_empty() {
-                    return stream::iter(vec![Err(SubscriptionErrorEvent {
-                        subscription_id,
-                        error: Error::InternalServerError,
-                        ts: batch_ts.into(),
-                    })]);
-                }
                 let events: Vec<Result<SubscriptionEvent, SubscriptionErrorEvent>> = value
                     .updates
                     .into_iter()
-                    .map(|update| match (update.update.path, update.update.datapoint) {
-                        (Some(path), Some(datapoint)) => Ok(SubscriptionEvent {
-                            subscription_id: subscription_id.clone(),
-                            data: Data::Object(DataObject {
-                                path: path.into(),
-                                dp: datapoint.into(),
-                            }),
-                            ts: batch_ts.into(),
-                        }),
-                        (_, _) => Err(SubscriptionErrorEvent {
-                            subscription_id: subscription_id.clone(),
-                            error: Error::InternalServerError,
-                            ts: batch_ts.into(),
-                        }),
-                    })
+                    .filter_map(
+                        |update| match (update.update.path, update.update.datapoint) {
+                            (Some(path), Some(datapoint)) => {
+                                if let Some(state) = &mut filter_state {
+                                    if !state.matches(&datapoint) {
+                                        return None;
+                                    }
+                                }
+                                Some(Ok(SubscriptionEvent {
+                                    subscription_id: subscription_id.clone(),
+                                    data: Data::Object(DataObject {
+                                        path: path.into(),
+                                        dp: datapoint.into(),
+                                    }),
+                                    ts: batch_ts.into(),
+                                }))
+                            }
+                            (_, _) => Some(Err(SubscriptionErrorEvent {
+                                subscription_id: subscription_id.clone(),
+                                error: Error::InternalServerError,
+                                ts: batch_ts.into(),
+                            })),
+                        },
+                    )
                     .collect();
                 stream::iter(events)
             }
@@ -492,6 +568,128 @@ fn convert_to_viss_stream(
             })]),
         }
     })
+}
+
+enum SubscriptionFilterState {
+    Range(RangeFilter),
+    Change(ChangeFilterState),
+}
+
+impl SubscriptionFilterState {
+    fn from(filter: &Filter) -> Option<Self> {
+        match filter {
+            Filter::Range(range_filter) => Some(Self::Range(range_filter.clone())),
+            Filter::Change(change_filter) => {
+                Some(Self::Change(ChangeFilterState::new(change_filter.clone())))
+            }
+            _ => None,
+        }
+    }
+
+    fn matches(&mut self, datapoint: &broker::Datapoint) -> bool {
+        match self {
+            SubscriptionFilterState::Range(range_filter) => {
+                evaluate_range_filter(range_filter, datapoint)
+            }
+            SubscriptionFilterState::Change(change_filter) => change_filter.matches(datapoint),
+        }
+    }
+}
+
+struct ChangeFilterState {
+    filter: ChangeFilter,
+    last_emitted_value: Option<f64>,
+}
+
+impl ChangeFilterState {
+    fn new(filter: ChangeFilter) -> Self {
+        Self {
+            filter,
+            last_emitted_value: None,
+        }
+    }
+
+    fn matches(&mut self, datapoint: &broker::Datapoint) -> bool {
+        let Some(value) = datapoint_to_f64(datapoint) else {
+            return false;
+        };
+        let Ok(diff_threshold) = self.filter.parameter.diff.parse::<f64>() else {
+            return false;
+        };
+
+        let should_emit = if let Some(last_emitted) = self.last_emitted_value {
+            evaluate_comparison_op(
+                self.filter.parameter.logic_op.clone(),
+                value - last_emitted,
+                diff_threshold,
+            )
+        } else {
+            true
+        };
+
+        if should_emit {
+            self.last_emitted_value = Some(value);
+        }
+
+        should_emit
+    }
+}
+
+fn evaluate_range_filter(filter: &RangeFilter, datapoint: &broker::Datapoint) -> bool {
+    let Some(value) = datapoint_to_f64(datapoint) else {
+        return false;
+    };
+    let Some(first_boundary) = filter.parameter.first() else {
+        return false;
+    };
+    let Ok(first_threshold) = first_boundary.boundary.parse::<f64>() else {
+        return false;
+    };
+
+    let mut result =
+        evaluate_comparison_op(first_boundary.boundary_op.clone(), value, first_threshold);
+    let mut previous_combination = first_boundary.combination_op.clone();
+
+    for boundary in filter.parameter.iter().skip(1) {
+        let Ok(threshold) = boundary.boundary.parse::<f64>() else {
+            return false;
+        };
+        let current = evaluate_comparison_op(boundary.boundary_op.clone(), value, threshold);
+
+        result = match previous_combination.unwrap_or(CombinationOp::And) {
+            CombinationOp::And => result && current,
+            CombinationOp::Or => result || current,
+        };
+
+        previous_combination = boundary.combination_op.clone();
+    }
+
+    result
+}
+
+fn evaluate_comparison_op(op: ComparisonOp, lhs: f64, rhs: f64) -> bool {
+    const FLOAT_COMPARISON_EPSILON: f64 = 1e-9;
+
+    match op {
+        ComparisonOp::Gte => lhs >= rhs,
+        ComparisonOp::Lte => lhs <= rhs,
+        ComparisonOp::Gt => lhs > rhs,
+        ComparisonOp::Lt => lhs < rhs,
+        ComparisonOp::Eq => (lhs - rhs).abs() <= FLOAT_COMPARISON_EPSILON,
+        ComparisonOp::Ne => (lhs - rhs).abs() > FLOAT_COMPARISON_EPSILON,
+    }
+}
+
+fn datapoint_to_f64(datapoint: &broker::Datapoint) -> Option<f64> {
+    match datapoint.value {
+        broker::DataValue::Int32(value) => Some(value as f64),
+        broker::DataValue::Int64(value) => Some(value as f64),
+        broker::DataValue::Uint32(value) => Some(value as f64),
+        broker::DataValue::Uint64(value) => Some(value as f64),
+        broker::DataValue::Float(value) => Some(value as f64),
+        broker::DataValue::Double(value) => Some(value),
+        _ => None,
+    }
 }
 
 fn resolve_permissions(
@@ -511,6 +709,79 @@ fn resolve_permissions(
             None => Err(Error::UnauthorizedTokenMissing),
         },
     }
+}
+
+/// Validate that a string conforms to the ISO 8601 duration format.
+///
+/// Valid examples: "PT1H", "P1D", "P1Y2M3DT4H5M6S", "P1W"
+/// Invalid examples: "INVALID", "1H", "", "PT"
+fn is_valid_iso8601_duration(s: &str) -> bool {
+    // Must start with 'P'
+    let rest = match s.strip_prefix('P') {
+        Some(r) => r,
+        None => return false,
+    };
+
+    // An empty string after 'P' is invalid
+    if rest.is_empty() {
+        return false;
+    }
+
+    // Week format: P<n>W  (e.g. "P2W")
+    if let Some(week_part) = rest.strip_suffix('W') {
+        return !week_part.is_empty() && week_part.chars().all(|c| c.is_ascii_digit());
+    }
+
+    // Split date and time parts at 'T'
+    let (date_part, time_part) = match rest.find('T') {
+        Some(pos) => (&rest[..pos], Some(&rest[pos + 1..])),
+        None => (rest, None),
+    };
+
+    // Parse a sequence of <number><designator> tokens
+    fn parse_designators(s: &str, valid: &[char]) -> bool {
+        if s.is_empty() {
+            return true;
+        }
+        let mut remaining = s;
+        let mut found_any = false;
+        while !remaining.is_empty() {
+            // Consume digits
+            let digit_end = remaining
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(remaining.len());
+            if digit_end == 0 {
+                return false; // designator found without preceding number
+            }
+            remaining = &remaining[digit_end..];
+            // Consume designator
+            match remaining.chars().next() {
+                Some(d) if valid.contains(&d) => {
+                    remaining = &remaining[1..];
+                    found_any = true;
+                }
+                _ => return false,
+            }
+        }
+        found_any
+    }
+
+    let date_ok = parse_designators(date_part, &['Y', 'M', 'D']);
+    let time_ok = match time_part {
+        Some(tp) => {
+            // If 'T' is present the time part must not be empty
+            if tp.is_empty() {
+                false
+            } else {
+                parse_designators(tp, &['H', 'M', 'S'])
+            }
+        }
+        None => true,
+    };
+
+    // At least one component (date or time) must be present
+    let has_content = !date_part.is_empty() || time_part.is_some();
+    date_ok && time_ok && has_content
 }
 
 async fn generate_metadata(
@@ -576,7 +847,9 @@ fn insert_entry(entries: &mut HashMap<String, MetadataEntry>, path: &str, entry:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::broker::{ChangeNotification, DataValue, Datapoint, EntryUpdate, EntryUpdates, Field};
+    use crate::broker::{
+        ChangeNotification, DataValue, Datapoint, EntryUpdate, EntryUpdates, Field,
+    };
     use futures::StreamExt;
     use std::collections::HashSet;
     use std::time::SystemTime;
@@ -604,6 +877,14 @@ mod tests {
         }
     }
 
+    fn datapoint(value: i32) -> broker::Datapoint {
+        broker::Datapoint {
+            ts: SystemTime::now(),
+            source_ts: None,
+            value: broker::DataValue::Int32(value),
+        }
+    }
+
     #[tokio::test]
     async fn test_convert_to_viss_stream_single_update() {
         let subscription_id = SubscriptionId::new();
@@ -611,7 +892,7 @@ mod tests {
             updates: vec![make_notification("Vehicle.Speed", 100)],
         };
         let input = futures::stream::iter(vec![Some(entry_updates)]);
-        let output: Vec<_> = convert_to_viss_stream(subscription_id, input)
+        let output: Vec<_> = convert_to_viss_stream(subscription_id, input, None)
             .collect()
             .await;
         assert_eq!(output.len(), 1);
@@ -631,7 +912,7 @@ mod tests {
             ],
         };
         let input = futures::stream::iter(vec![Some(entry_updates)]);
-        let output: Vec<_> = convert_to_viss_stream(subscription_id, input)
+        let output: Vec<_> = convert_to_viss_stream(subscription_id, input, None)
             .collect()
             .await;
         // All 3 updates must be emitted, not just one.
@@ -643,21 +924,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_convert_to_viss_stream_empty_updates() {
+        // An empty updates batch produces no events (flat_map over empty iterator).
         let subscription_id = SubscriptionId::new();
         let entry_updates = EntryUpdates { updates: vec![] };
         let input = futures::stream::iter(vec![Some(entry_updates)]);
-        let output: Vec<_> = convert_to_viss_stream(subscription_id, input)
+        let output: Vec<_> = convert_to_viss_stream(subscription_id, input, None)
             .collect()
             .await;
-        assert_eq!(output.len(), 1);
-        assert!(output[0].is_err());
+        assert_eq!(output.len(), 0);
     }
 
     #[tokio::test]
     async fn test_convert_to_viss_stream_none_yields_service_unavailable() {
         let subscription_id = SubscriptionId::new();
         let input = futures::stream::iter(vec![None]);
-        let output: Vec<_> = convert_to_viss_stream(subscription_id, input)
+        let output: Vec<_> = convert_to_viss_stream(subscription_id, input, None)
             .collect()
             .await;
         assert_eq!(output.len(), 1);
@@ -678,7 +959,7 @@ mod tests {
             updates: vec![make_notification("Vehicle.Speed", 43)],
         };
         let input = futures::stream::iter(vec![Some(batch1), Some(batch2)]);
-        let output: Vec<_> = convert_to_viss_stream(subscription_id, input)
+        let output: Vec<_> = convert_to_viss_stream(subscription_id, input, None)
             .collect()
             .await;
         // batch1 has 2 updates, batch2 has 1 → total 3 events.
@@ -686,5 +967,98 @@ mod tests {
         for event in &output {
             assert!(event.is_ok(), "expected Ok event, got Err variant");
         }
+    }
+
+    #[test]
+    fn range_filter_matches_or_boundaries() {
+        let filter = RangeFilter {
+            parameter: vec![
+                RangeBoundary {
+                    boundary_op: ComparisonOp::Lt,
+                    boundary: "50".to_string(),
+                    combination_op: Some(CombinationOp::Or),
+                },
+                RangeBoundary {
+                    boundary_op: ComparisonOp::Gt,
+                    boundary: "55".to_string(),
+                    combination_op: None,
+                },
+            ],
+        };
+
+        assert!(!evaluate_range_filter(&filter, &datapoint(53)));
+        assert!(evaluate_range_filter(&filter, &datapoint(60)));
+    }
+
+    #[test]
+    fn change_filter_requires_threshold_after_initial_event() {
+        let mut state = ChangeFilterState::new(ChangeFilter {
+            parameter: ChangeParameter {
+                logic_op: ComparisonOp::Gt,
+                diff: "10".to_string(),
+            },
+        });
+
+        assert!(state.matches(&datapoint(40)));
+        assert!(!state.matches(&datapoint(45)));
+        assert!(state.matches(&datapoint(55)));
+    }
+
+    #[test]
+    fn test_valid_iso8601_durations() {
+        // Week designator
+        assert!(is_valid_iso8601_duration("P1W"));
+        assert!(is_valid_iso8601_duration("P52W"));
+
+        // Date-only durations
+        assert!(is_valid_iso8601_duration("P1Y"));
+        assert!(is_valid_iso8601_duration("P1M"));
+        assert!(is_valid_iso8601_duration("P1D"));
+        assert!(is_valid_iso8601_duration("P1Y2M3D"));
+
+        // Time-only durations
+        assert!(is_valid_iso8601_duration("PT1H"));
+        assert!(is_valid_iso8601_duration("PT30M"));
+        assert!(is_valid_iso8601_duration("PT60S"));
+
+        // Combined date and time durations
+        assert!(is_valid_iso8601_duration("P1DT12H"));
+        assert!(is_valid_iso8601_duration("P1Y2M3DT4H5M6S"));
+
+        // Common real-world examples used in history filter tests
+        assert!(is_valid_iso8601_duration("PT10M"));
+        assert!(is_valid_iso8601_duration("P1D"));
+        assert!(is_valid_iso8601_duration("P1Y"));
+    }
+
+    #[test]
+    fn test_invalid_iso8601_durations() {
+        // Missing 'P' prefix
+        assert!(!is_valid_iso8601_duration("1H"));
+        assert!(!is_valid_iso8601_duration("T1H"));
+        assert!(!is_valid_iso8601_duration("1Y2M"));
+
+        // Empty string
+        assert!(!is_valid_iso8601_duration(""));
+
+        // Only 'P' with no components
+        assert!(!is_valid_iso8601_duration("P"));
+
+        // Arbitrary strings
+        assert!(!is_valid_iso8601_duration("INVALID"));
+        assert!(!is_valid_iso8601_duration("last hour"));
+        assert!(!is_valid_iso8601_duration("24h"));
+
+        // 'T' present but no time components
+        assert!(!is_valid_iso8601_duration("PT"));
+        assert!(!is_valid_iso8601_duration("P1DT"));
+
+        // Designator without digits
+        assert!(!is_valid_iso8601_duration("PY"));
+        assert!(!is_valid_iso8601_duration("PTH"));
+
+        // Unknown designators
+        assert!(!is_valid_iso8601_duration("P1X"));
+        assert!(!is_valid_iso8601_duration("PT1X"));
     }
 }
