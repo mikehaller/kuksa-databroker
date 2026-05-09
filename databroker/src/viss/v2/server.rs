@@ -624,54 +624,6 @@ fn datapoint_to_f64(datapoint: &broker::Datapoint) -> Option<f64> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn datapoint(value: i32) -> broker::Datapoint {
-        broker::Datapoint {
-            ts: SystemTime::now(),
-            source_ts: None,
-            value: broker::DataValue::Int32(value),
-        }
-    }
-
-    #[test]
-    fn range_filter_matches_or_boundaries() {
-        let filter = RangeFilter {
-            parameter: vec![
-                RangeBoundary {
-                    boundary_op: ComparisonOp::Lt,
-                    boundary: "50".to_string(),
-                    combination_op: Some(CombinationOp::Or),
-                },
-                RangeBoundary {
-                    boundary_op: ComparisonOp::Gt,
-                    boundary: "55".to_string(),
-                    combination_op: None,
-                },
-            ],
-        };
-
-        assert!(!evaluate_range_filter(&filter, &datapoint(53)));
-        assert!(evaluate_range_filter(&filter, &datapoint(60)));
-    }
-
-    #[test]
-    fn change_filter_requires_threshold_after_initial_event() {
-        let mut state = ChangeFilterState::new(ChangeFilter {
-            parameter: ChangeParameter {
-                logic_op: ComparisonOp::Gt,
-                diff: "10".to_string(),
-            },
-        });
-
-        assert!(state.matches(&datapoint(40)));
-        assert!(!state.matches(&datapoint(45)));
-        assert!(state.matches(&datapoint(55)));
-    }
-}
-
 fn resolve_permissions(
     authorization: &Authorization,
     token: &Option<String>,
@@ -748,5 +700,53 @@ fn insert_entry(entries: &mut HashMap<String, MetadataEntry>, path: &str, entry:
         None => {
             entries.insert(path.to_owned(), entry);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn datapoint(value: i32) -> broker::Datapoint {
+        broker::Datapoint {
+            ts: SystemTime::now(),
+            source_ts: None,
+            value: broker::DataValue::Int32(value),
+        }
+    }
+
+    #[test]
+    fn range_filter_matches_or_boundaries() {
+        let filter = RangeFilter {
+            parameter: vec![
+                RangeBoundary {
+                    boundary_op: ComparisonOp::Lt,
+                    boundary: "50".to_string(),
+                    combination_op: Some(CombinationOp::Or),
+                },
+                RangeBoundary {
+                    boundary_op: ComparisonOp::Gt,
+                    boundary: "55".to_string(),
+                    combination_op: None,
+                },
+            ],
+        };
+
+        assert!(!evaluate_range_filter(&filter, &datapoint(53)));
+        assert!(evaluate_range_filter(&filter, &datapoint(60)));
+    }
+
+    #[test]
+    fn change_filter_requires_threshold_after_initial_event() {
+        let mut state = ChangeFilterState::new(ChangeFilter {
+            parameter: ChangeParameter {
+                logic_op: ComparisonOp::Gt,
+                diff: "10".to_string(),
+            },
+        });
+
+        assert!(state.matches(&datapoint(40)));
+        assert!(!state.matches(&datapoint(45)));
+        assert!(state.matches(&datapoint(55)));
     }
 }
