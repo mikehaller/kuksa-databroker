@@ -600,13 +600,15 @@ fn evaluate_range_filter(filter: &RangeFilter, datapoint: &broker::Datapoint) ->
 }
 
 fn evaluate_comparison_op(op: ComparisonOp, lhs: f64, rhs: f64) -> bool {
+    const FLOAT_COMPARISON_EPSILON: f64 = 1e-9;
+
     match op {
         ComparisonOp::Gte => lhs >= rhs,
         ComparisonOp::Lte => lhs <= rhs,
         ComparisonOp::Gt => lhs > rhs,
         ComparisonOp::Lt => lhs < rhs,
-        ComparisonOp::Eq => lhs == rhs,
-        ComparisonOp::Ne => lhs != rhs,
+        ComparisonOp::Eq => (lhs - rhs).abs() <= FLOAT_COMPARISON_EPSILON,
+        ComparisonOp::Ne => (lhs - rhs).abs() > FLOAT_COMPARISON_EPSILON,
     }
 }
 
