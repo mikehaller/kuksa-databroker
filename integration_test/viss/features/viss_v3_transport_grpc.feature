@@ -3,6 +3,7 @@
 #
 
 @Roadmap
+@Planned
 Feature: VISS v3 Compliance Testing - Transport: gRPC
 
   Background:

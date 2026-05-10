@@ -35,6 +35,8 @@ pub trait Response: Serialize {}
 impl Response for GetSuccessResponse {}
 impl Response for GetErrorResponse {}
 
+impl Response for ServerCapabilitiesResponse {}
+
 impl Response for SetSuccessResponse {}
 impl Response for SetErrorResponse {}
 
@@ -63,6 +65,7 @@ pub struct GetRequest {
 pub enum GetSuccessResponse {
     Data(DataResponse),
     Metadata(MetadataResponse),
+    ServerCapabilities(ServerCapabilitiesResponse),
 }
 
 #[derive(Serialize)]
@@ -77,6 +80,13 @@ pub struct DataResponse {
 pub struct MetadataResponse {
     pub request_id: RequestId,
     pub metadata: HashMap<String, MetadataEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ServerCapabilitiesResponse {
+    pub filter: Vec<String>,
+    pub transport_protocol: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -191,39 +201,107 @@ pub struct GenericErrorResponse {
     pub error: Error,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(tag = "type")]
 pub enum Filter {
     #[serde(rename = "static-metadata")]
     StaticMetadata(StaticMetadataFilter),
+    #[serde(rename = "dynamic-metadata")]
+    DynamicMetadata(DynamicMetadataFilter),
     #[serde(rename = "paths")]
     Paths(PathsFilter),
     #[serde(rename = "timebased")]
     Timebased(TimebasedFilter),
+    #[serde(rename = "range")]
+    Range(RangeFilter),
+    #[serde(rename = "change")]
+    Change(ChangeFilter),
+    #[serde(rename = "history")]
+    History(HistoryFilter),
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PathsFilter {
     pub parameter: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct StaticMetadataFilter {
     // pub parameters: Option<StaticMetadataParameters>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DynamicMetadataFilter {
+    pub parameter: Vec<String>,
+}
+
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TimebasedFilter {
     pub parameter: Period,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Period {
     pub period: u32,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RangeFilter {
+    pub parameter: Vec<RangeBoundary>,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct RangeBoundary {
+    #[serde(rename = "boundary-op")]
+    pub boundary_op: ComparisonOp,
+    pub boundary: String,
+    #[serde(rename = "combination-op")]
+    pub combination_op: Option<CombinationOp>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum ComparisonOp {
+    #[serde(alias = "ge")]
+    Gte,
+    #[serde(alias = "le")]
+    Lte,
+    Gt,
+    Lt,
+    Eq,
+    Ne,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum CombinationOp {
+    And,
+    Or,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct ChangeFilter {
+    pub parameter: ChangeParameter,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct ChangeParameter {
+    #[serde(rename = "logic-op")]
+    pub logic_op: ComparisonOp,
+    pub diff: String,
+}
+
+/// A history filter request with an ISO 8601 duration parameter (e.g. "PT1H", "P1D").
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryFilter {
+    pub parameter: String,
 }
 
 // Unique id value specified by the client. Returned by the server in the

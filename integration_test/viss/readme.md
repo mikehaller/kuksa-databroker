@@ -1,5 +1,11 @@
 # Kuksa VISS Server Specification Compliance Testing
 
+## Implementation status in Databroker
+
+- Current implementation status: prototype support for a subset of VISS v2 over WebSocket.
+- VISS support is optional and must be enabled explicitly (`--features viss` + `--enable-viss`).
+- Feature files in this directory also cover broader and forward-looking specification scenarios; their presence does not imply implemented support for all transports or all VISS versions.
+
 ## Test Framework Architecture
 
 - pytest-bdd for Gherkin-based testing.
@@ -11,7 +17,18 @@
 
 - Current product support covered by the default VISS test run: VISS v2 over WebSocket.
 - Roadmap/spec-tracking coverage: VISS v2 over HTTP, VISS v2 over MQTT, and all VISS v3 scenarios.
-- Roadmap scenarios are marked with `@Roadmap` and skipped by default. Run them explicitly with:
+- Roadmap scenarios are marked with `@Roadmap` and skipped by default. Additional markers such as `@Planned` and `@MockedTransport` explain why a scenario is outside current product support.
+- MQTT roadmap scenarios additionally use `@MockedTransport` where the test flow relies on a mock transport/server component.
+
+## Implementation Status
+
+- Implemented in production databroker: VISS v2 subset over WebSocket (`--enable-viss`).
+- In progress / not fully equivalent to production server functionality yet: VISS HTTP and MQTT compliance scenarios in this test suite.
+- In progress / not fully equivalent to production server functionality yet: VISS v3 compliance scenarios in this test suite.
+- Test harness note: MQTT tests currently use a mock VISS server component in test code for parts
+  of the flow and should not be interpreted as proof of production MQTT transport support.
+
+Run roadmap scenarios explicitly with:
 
 ```
 pytest --run-roadmap -m Roadmap

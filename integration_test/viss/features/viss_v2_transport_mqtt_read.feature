@@ -6,6 +6,7 @@
 #
 
 @Roadmap
+@MockedTransport
 Feature: VISS v2 Compliance Testing - Transport: MQTT
 
   Background:
