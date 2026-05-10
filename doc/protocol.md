@@ -54,6 +54,8 @@ KUKSA databroker currently provides a prototype implementation of a subset of [V
 Current production scope is VISS v2 over WebSocket only.
 The scope currently implemented is reflected in the overview table above.
 
+WebSocket is the only VISS transport currently supported by Databroker. The VISS integration test suite keeps HTTP, MQTT and VISS v3 scenarios as roadmap/spec-tracking coverage, but those markers do not indicate current product support.
+
 It supports authorization using the access token format specified in [authorization.md](authorization.md).
 
 VISSv2 support in databroker is included by building it with the `viss` feature flag.

@@ -34,9 +34,30 @@ def check_databroker_connect_http_url(pytestconfig):
 
 # Additional custom configuratio parameters
 def pytest_addoption(parser):
+    parser.addoption(
+        "--run-roadmap",
+        action="store_true",
+        default=False,
+        help="Run roadmap scenarios that track planned transports or protocol versions.",
+    )
     parser.addini('viss_ws_base_url', 'URL to Databroker VISS WebSocket endpoint (ws://hostname:port)', type="string", default="ws://localhost:8090")
     parser.addini('viss_http_base_url', 'URL to Databroker VISS HTTP endpoint (http://hostname:port)', type="string", default="http://localhost:8090")
     parser.addini('viss_mqtt_base_url', 'URL to Databroker VISS MQTT endpoint (mqtt://hostname:port)', type="string", default="mqtt://localhost:1883")
     parser.addini('viss_grpc_base_url', 'URL to Databroker VISS gRPC endpoint (http://hostname:port)', type="string", default="localhost:55555")
     parser.addini('viss_connect_timeout', 'Connect timeout for VISS clients (float in seconds)', type="string", default="1.0")
     parser.addini('viss_message_timeout', 'Connect timeout for VISS clients (float in seconds)', type="string", default="0.5")
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--run-roadmap"):
+        return
+
+    skip_roadmap = pytest.mark.skip(
+        reason=(
+            "roadmap scenario: tracks planned transport/protocol coverage that is not "
+            "currently supported by Databroker; use --run-roadmap to include it"
+        )
+    )
+    for item in items:
+        if "Roadmap" in item.keywords:
+            item.add_marker(skip_roadmap)

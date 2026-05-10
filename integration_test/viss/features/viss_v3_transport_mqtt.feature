@@ -2,8 +2,8 @@
 # https://raw.githack.com/COVESA/vehicle-information-service-specification/main/spec/VISSv3.0_Core.html
 #
 
+@Roadmap
 @MockedTransport
-
 Feature: VISS v3 Compliance Testing - Transport: MQTT
 
   Background:

@@ -2,6 +2,7 @@
 # https://www.w3.org/TR/viss2-transport/#wss-service-discovery-read
 #
 
+@Roadmap
 Feature: VISS v2 Compliance Testing - Transport: HTTP
 
   Background:
