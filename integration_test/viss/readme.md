@@ -3,9 +3,19 @@
 ## Test Framework Architecture
 
 - pytest-bdd for Gherkin-based testing.
-- reusable step definitions for HTTP, WebSockets, and MQTT interactions.
-- tests structured in a modular way to allow easy extension for VISS v3.
+- reusable step definitions for WebSocket interactions plus roadmap HTTP/MQTT/V3 coverage.
+- tests structured in a modular way to keep planned transport and VISS v3 coverage visible without treating it as current product support.
 - reports generated with allure-pytest to assess compliance.
+
+## Current scope
+
+- Current product support covered by the default VISS test run: VISS v2 over WebSocket.
+- Roadmap/spec-tracking coverage: VISS v2 over HTTP, VISS v2 over MQTT, and all VISS v3 scenarios.
+- Roadmap scenarios are marked with `@Roadmap` and skipped by default. Run them explicitly with:
+
+```
+pytest --run-roadmap -m Roadmap
+```
 
 ## Pre-Requisites
 
@@ -60,11 +70,14 @@ pytest -s -v --log-level=DEBUG
 # Only run tests which have the "@MustHave" marker:
 pytest -m MustHave
 
+# Run only roadmap scenarios that track planned transport / VISS v3 coverage:
+pytest --run-roadmap -m Roadmap
+
 # Run only specific tests using the keyword option, e.g. 'basic' or 'http' etc.
 pytest -k 'basic'
 ```
 
-## MQTT Setup (optional)
+## MQTT Setup (optional, roadmap only)
 
 Run mqtt broker:
 ```
