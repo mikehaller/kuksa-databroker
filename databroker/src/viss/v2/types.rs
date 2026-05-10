@@ -200,6 +200,8 @@ pub enum Filter {
     Paths(PathsFilter),
     #[serde(rename = "timebased")]
     Timebased(TimebasedFilter),
+    #[serde(rename = "curvelog")]
+    Curvelog(CurvelogFilter),
 }
 
 #[derive(Deserialize)]
@@ -218,6 +220,19 @@ pub struct StaticMetadataFilter {
 #[serde(rename_all = "camelCase")]
 pub struct TimebasedFilter {
     pub parameter: Period,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurvelogFilter {
+    pub parameter: CurvelogParameters,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurvelogParameters {
+    pub maxerr: f64,
+    pub bufsize: u32,
 }
 
 #[derive(Deserialize)]
@@ -577,5 +592,39 @@ impl SubscriptionId {
 impl Default for SubscriptionId {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_subscribe_with_curvelog_filter() {
+        let request = serde_json::from_str::<Request>(
+            r#"{
+                "action":"subscribe",
+                "path":"Vehicle.Speed",
+                "filter":{
+                    "type":"curvelog",
+                    "parameter":{"maxerr":0.5,"bufsize":100}
+                },
+                "requestId":"test-request"
+            }"#,
+        )
+        .expect("request should deserialize");
+
+        match request {
+            Request::Subscribe(subscribe_request) => {
+                match subscribe_request.filter.expect("filter should be present") {
+                    Filter::Curvelog(curvelog) => {
+                        assert_eq!(curvelog.parameter.maxerr, 0.5);
+                        assert_eq!(curvelog.parameter.bufsize, 100);
+                    }
+                    _ => panic!("expected curvelog filter"),
+                }
+            }
+            _ => panic!("expected subscribe request"),
+        }
     }
 }
