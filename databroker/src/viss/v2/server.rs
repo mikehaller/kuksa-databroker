@@ -890,7 +890,6 @@ mod tests {
         assert_eq!(error_spec.number, 501);
         assert_eq!(error_spec.reason, "not_implemented");
     }
-
     fn make_notification(path: &str, value: i32) -> ChangeNotification {
         ChangeNotification {
             id: 1,
