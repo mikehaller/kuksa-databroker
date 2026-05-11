@@ -426,6 +426,14 @@ impl Viss for Server {
         request: SubscribeRequest,
     ) -> Result<(SubscribeSuccessResponse, Self::SubscribeStream), SubscribeErrorResponse> {
         let request_id = request.request_id;
+        if let Some(Filter::Curvelog(_)) = &request.filter {
+            return Err(SubscribeErrorResponse {
+                request_id,
+                error: Error::NotImplemented,
+                ts: SystemTime::now().into(),
+            });
+        }
+
         let permissions = resolve_permissions(&self.authorization, &request.authorization)
             .map_err(|error| SubscribeErrorResponse {
                 request_id: request_id.clone(),
@@ -854,6 +862,34 @@ mod tests {
     use std::collections::HashSet;
     use std::time::SystemTime;
 
+    #[tokio::test]
+    async fn subscribe_with_curvelog_filter_returns_not_implemented() {
+        let broker = broker::DataBroker::new("test-version", "test-commit");
+        let server = Server::new(broker, Authorization::Disabled);
+        let request = serde_json::from_str::<SubscribeRequest>(
+            r#"{
+                "path":"Vehicle.Speed",
+                "requestId":"curvelog-request",
+                "filter":{
+                    "type":"curvelog",
+                    "parameter":{"maxerr":0.5,"bufsize":100}
+                }
+            }"#,
+        )
+        .expect("subscribe request should deserialize");
+
+        let result = server.subscribe(request).await;
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!(
+                "curvelog subscribe is deferred and should return a not_implemented error response"
+            ),
+        };
+
+        let error_spec: ErrorSpec = error.error.into();
+        assert_eq!(error_spec.number, 501);
+        assert_eq!(error_spec.reason, "not_implemented");
+    }
     fn make_notification(path: &str, value: i32) -> ChangeNotification {
         ChangeNotification {
             id: 1,

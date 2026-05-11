@@ -54,6 +54,10 @@ Subscribes to the given VSS path.
 
   _maxerr value_ and _bufsize value_: numberic values as specified in VISSv2
 
+  Curvelog is currently deferred in the server implementation. Requests with
+  this filter are expected to return an error response with
+  `error.number = 501` and `error.reason = "not_implemented"`.
+
 > When I send an unsubscribe request
 
 Unsubscribe to no longer receive VSS data point updates.
